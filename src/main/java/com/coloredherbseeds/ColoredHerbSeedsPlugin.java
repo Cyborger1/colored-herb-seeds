@@ -28,14 +28,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package com.coloredherbseeds;
 
 import com.google.common.collect.ImmutableMap;
-import java.util.Arrays;
 import java.util.LinkedHashSet;
-import java.util.Set;
 import javax.inject.Inject;
-import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemID;
 import net.runelite.api.ModelData;
 import net.runelite.api.events.PostItemComposition;
 import net.runelite.client.callback.ClientThread;
@@ -52,61 +50,24 @@ import net.runelite.client.plugins.PluginDescriptor;
 )
 public class ColoredHerbSeedsPlugin extends Plugin
 {
-	@Value
-	private static class SeedColorTuple
-	{
-		short[] seed;
-		short[] herb;
-
-		public SeedColorTuple(short[] seed, short[] herb)
-		{
-			int l1 = seed.length;
-			int l2 = herb.length;
-
-			this.seed = seed;
-
-			if (l1 < l2)
-			{
-				this.herb = Arrays.copyOf(herb, l1);
-			}
-			else if (l1 > l2)
-			{
-				short[] nherb = new short[l1];
-				for (int i = 0; i < l1; i++)
-				{
-					nherb[i] = herb[i % l2];
-				}
-				this.herb = nherb;
-			}
-			else
-			{
-				this.herb = herb;
-			}
-		}
-
-		public SeedColorTuple(Set<Short> seed, Set<Short> herb)
-		{
-			this(convert(seed), convert(herb));
-		}
-
-		private static short[] convert(Set<Short> set)
-		{
-			short[] s = new short[set.size()];
-			int i = 0;
-			for (short v : set)
-			{
-				s[i++] = v;
-			}
-			return s;
-		}
-	}
-
 	private static final ImmutableMap<Integer, Integer> SEED_TO_HERBS = ImmutableMap.<Integer, Integer>builder()
-		.put(5291, 249)
-		.put(5292, 251)
+		.put(ItemID.GUAM_SEED, ItemID.GUAM_LEAF)
+		.put(ItemID.MARRENTILL_SEED, ItemID.MARRENTILL)
+		.put(ItemID.TARROMIN_SEED, ItemID.TARROMIN)
+		.put(ItemID.HARRALANDER_SEED, ItemID.HARRALANDER)
+		.put(ItemID.RANARR_SEED, ItemID.RANARR_WEED)
+		.put(ItemID.TOADFLAX_SEED, ItemID.TOADFLAX)
+		.put(ItemID.IRIT_SEED, ItemID.IRIT_LEAF)
+		.put(ItemID.AVANTOE_SEED, ItemID.AVANTOE)
+		.put(ItemID.KWUARM_SEED, ItemID.KWUARM)
+		.put(ItemID.SNAPDRAGON_SEED, ItemID.SNAPDRAGON)
+		.put(ItemID.CADANTINE_SEED, ItemID.CADANTINE)
+		.put(ItemID.LANTADYME_SEED, ItemID.LANTADYME)
+		.put(ItemID.DWARF_WEED_SEED, ItemID.DWARF_WEED)
+		.put(ItemID.TORSTOL_SEED, ItemID.TORSTOL)
 		.build();
 
-	private ImmutableMap<Integer, SeedColorTuple> colorMap;
+	private ImmutableMap<Integer, SeedHerbColorTuple> colorMap = null;
 
 	@Inject
 	Client client;
@@ -122,75 +83,71 @@ public class ColoredHerbSeedsPlugin extends Plugin
 	{
 		clientThread.invokeLater(() ->
 			{
-				ImmutableMap.Builder<Integer, SeedColorTuple> builder = ImmutableMap.builder();
+				ImmutableMap.Builder<Integer, SeedHerbColorTuple> builder = ImmutableMap.builder();
 				SEED_TO_HERBS.forEach((key, value) ->
 				{
-					ModelData seed = client.loadModelData(key);
-					ModelData herb = client.loadModelData(value);
+					int seedID = itemManager.getItemComposition(key).getInventoryModel();
+					int herbID = itemManager.getItemComposition(value).getInventoryModel();
+					ModelData seedModel = client.loadModelData(seedID);
+					ModelData herbModel = client.loadModelData(herbID);
 
-					LinkedHashSet<Short> uniqueSeed = new LinkedHashSet<>();
-					LinkedHashSet<Short> uniqueHerb = new LinkedHashSet<>();
-
-					for (short c : seed.getFaceColors())
+					if (seedModel != null && herbModel != null)
 					{
-						uniqueSeed.add(c);
-					}
+						LinkedHashSet<Short> uniqueSeed = new LinkedHashSet<>();
+						LinkedHashSet<Short> uniqueHerb = new LinkedHashSet<>();
 
-					for (short c : herb.getFaceColors())
-					{
-						uniqueHerb.add(c);
-					}
+						for (short c : seedModel.getFaceColors())
+						{
+							uniqueSeed.add(c);
+						}
 
-					builder.put(key, new SeedColorTuple(uniqueSeed, uniqueHerb));
+						for (short c : herbModel.getFaceColors())
+						{
+							uniqueHerb.add(c);
+						}
+
+						builder.put(key, new SeedHerbColorTuple(uniqueSeed, uniqueHerb));
+					}
 				});
 
 				colorMap = builder.build();
+
+				client.getItemCompositionCache().reset();
+				client.getItemModelCache().reset();
+				client.getItemSpriteCache().reset();
 			}
 		);
-
-		resetCaches();
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
 		colorMap = null;
-		resetCaches();
-	}
-
-	@Subscribe
-	public void onPostItemComposition(PostItemComposition event)
-	{
-		ItemComposition itemComposition = event.getItemComposition();
-		int itemId = itemComposition.getId();
-		SeedColorTuple colorData = colorMap.get(itemId);
-
-		if (colorData == null)
-		{
-			return;
-		}
-
-		System.out.println(itemComposition.getColorToReplace());
-		System.out.println(itemComposition.getColorToReplaceWith());
-
-		try
-		{
-			itemComposition.setColorToReplace(colorData.seed);
-			itemComposition.setColorToReplaceWith(colorData.herb);
-		}
-		catch (Exception e)
-		{
-			log.error("Could not modify the item composition", e);
-		}
-	}
-
-	private void resetCaches()
-	{
 		clientThread.invokeLater(() ->
 		{
 			client.getItemCompositionCache().reset();
 			client.getItemModelCache().reset();
 			client.getItemSpriteCache().reset();
 		});
+	}
+
+	@Subscribe
+	public void onPostItemComposition(PostItemComposition event)
+	{
+		if (colorMap == null)
+		{
+			return;
+		}
+
+		ItemComposition itemComposition = event.getItemComposition();
+		SeedHerbColorTuple colorData = colorMap.get(itemComposition.getId());
+
+		if (colorData == null)
+		{
+			return;
+		}
+
+		itemComposition.setColorToReplace(colorData.getSeedColors());
+		itemComposition.setColorToReplaceWith(colorData.getHerbColors());
 	}
 }
